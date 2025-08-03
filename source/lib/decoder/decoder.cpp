@@ -119,8 +119,8 @@ void mcemDecoder::decodeBaseMesh(MeshBundle&        MB,
 								decoderParams&		params,
 								decoderDracoParams&	paramsDraco) {
 	// decode metadata
-	decodeMetadata(bitstreamBase, params);
-
+	//decodeMetadata(bitstreamBase, params);
+	params.subdivIterCount = m_hls.sps.subdivFitSubdivIterCount;
 	decodeDraco(reconMesh, bitstreamBase);
 	if (params.subdivIterCount > 0) {
 		subdivBaseMesh(MB, reconMesh, params.subdivIterCount);
@@ -128,11 +128,7 @@ void mcemDecoder::decodeBaseMesh(MeshBundle&        MB,
 }
 
 void mcemDecoder::decodeGeometryResidual(MeshBundle&         MB,
-										 std::vector<char>&	 bitstreamGeom,
 										 decoderParams&      params) {
-	if (!m_bufferChunk.readFromBitstream(bitstreamGeom)) {
-		std::cout << "Fail in readFromBitstream" << std::endl;
-	}
 	m_decBac.setBitstreamBuffer(m_bufferChunk);
 	m_decBac.initBac();
 	init_aec_context_tab();
@@ -152,7 +148,18 @@ void mcemDecoder::decode(decoderParams& params,
 						 decoderDracoParams& paramsDraco, 
 						 decoderHPMParams& paramsHPM, 
 						 std::vector<char>& bitstreamBase,
-						 std::vector<char>& bitstreamGeom) {
+						 std::vector<char>& bitstreamGeom,
+						 const std::string& inputPath) {
+
+	bool endDecodeSequence = false;
+	uint8_t nextStartCode = 0;
+	m_bitstreamFileName = inputPath;
+	ifstream bitstreamFile(m_bitstreamFileName, ios::binary);
+	if (!bitstreamFile) {
+		cerr << "Error: failed to open bitstream file " << m_bitstreamFileName << " for writing!"
+			<< endl;
+	}
+
 	TriMesh<MeshType> reconMesh;
 	MeshBundle        MB;
 	std::vector<uint32_t> mtlPos;
@@ -160,21 +167,73 @@ void mcemDecoder::decode(decoderParams& params,
 	double userTimeGeometry = 0.0;
 	double userTimeTexture = 0.0;
 	clock_t userTimeTotalBegin = clock();
-	clock_t userTimeGeometryBegin = clock();
-	decodeBaseMesh(MB, reconMesh, bitstreamBase, params, paramsDraco);
-	MB.disp.clear();
-	MB.disp.resize(reconMesh.XYZ.size());
-	if (bitstreamGeom.size() > 0) {
-		decodeGeometryResidual(MB, bitstreamGeom, params);
-		reconMesh.reconGeometry(MB.disp);
-	}
-	userTimeGeometry = (double)(clock() - userTimeGeometryBegin) / CLOCKS_PER_SEC;
 
-	clock_t userTimeTextureBegin = clock();
-	if (params.flag_texture) {
-		decodeTexture(paramsHPM);
+	int buffersize = (1 << 28);
+	while (!bitstreamFile.eof()){
+		if (m_bufferChunk.readFromBitstream(bitstreamFile, buffersize, endDecodeSequence,
+											nextStartCode) == EXIT_FAILURE) {
+			continue;
+		}
+
+		switch (m_bufferChunk.getBufferType()) {
+		case BufferChunkType::BCT_SPS: {
+			m_decBac.setBitstreamBuffer(m_bufferChunk);
+			m_decBac.parseSPS(m_hls.sps);
+			m_bufferChunk.reset();
+			m_decBac.reset();
+			break;
+		}
+		case BufferChunkType::BCT_MESH: {
+			int dataSize = m_bufferChunk.ssize;
+			bitstreamBase.resize(dataSize);
+			std::cout << "Bitstream size basemesh:" << dataSize << " bytes." << endl;
+			std::memcpy(bitstreamBase.data(), m_bufferChunk.getBitStreamBuffer(), dataSize);
+			clock_t userTimeMeshBegin = clock();
+			decodeBaseMesh(MB, reconMesh, bitstreamBase, params, paramsDraco);
+			userTimeGeometry += (double)(clock() - userTimeMeshBegin) / CLOCKS_PER_SEC;
+			m_bufferChunk.reset();
+			break;
+		}
+		case BufferChunkType::BCT_GEOM: {
+			clock_t userTimeGeometryBegin = clock();
+			int dataSize = m_bufferChunk.ssize;
+			MB.disp.clear();
+			MB.disp.resize(reconMesh.XYZ.size());
+
+			decodeGeometryResidual(MB, params);
+			reconMesh.reconGeometry(MB.disp);
+
+			userTimeGeometry += (double)(clock() - userTimeGeometryBegin) / CLOCKS_PER_SEC;
+			std::cout << "Bitstream size geometry:" << dataSize << " bytes." << endl;
+
+			break;
+		}
+		case BufferChunkType::BCT_TEXTURE: {
+
+			const char* payloadPtr = reinterpret_cast<const char*>(m_bufferChunk.getBitStreamBuffer());
+			size_t       payloadLen = static_cast<size_t>(m_bufferChunk.ssize);
+
+			std::ofstream texOut(paramsHPM.input, std::ios::binary | std::ios::out);
+			texOut.write(payloadPtr, payloadLen);
+			texOut.close();
+			std::cout << "Bitstream size texture: "<< payloadLen << " bytes." << std::endl;
+			clock_t userTimeTextureBegin = clock();
+			decodeTexture(paramsHPM);
+			userTimeTexture = (double)(clock() - userTimeTextureBegin) / CLOCKS_PER_SEC;
+			m_bufferChunk.reset();
+
+			break;
+		}
+		case BufferChunkType::BCT_MAX:
+			break;  // end of the sequence
+		default: {
+			checkCond(false, "Error: invalid bitstream type!");
+			continue;
+		}
+		}
 	}
-	userTimeTexture = (double)(clock() - userTimeTextureBegin) / CLOCKS_PER_SEC;
+	bitstreamFile.close();
+
 	userTimeTotal = (double)(clock() - userTimeTotalBegin) / CLOCKS_PER_SEC;
 
 	if (params.flag_recon_dec) {

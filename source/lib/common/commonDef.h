@@ -186,4 +186,26 @@ static inline int ceilLog2(uint64_t x) {
   return result;
 }
 
+//////////////////////////////////////////////////////////////////////////
+// Enum definitions
+//////////////////////////////////////////////////////////////////////////
+
+enum BufferChunkType {
+    BCT_MIN = 0xA0,
+    BCT_SPS,
+    //BCT_GPS,
+    //BCT_FRAME,
+    //BCT_GBH,
+    BCT_MESH,
+    BCT_GEOM,
+    BCT_TEXTURE,
+    //BCT_APS,
+    //BCT_ABH_COL,
+    //BCT_ABH_REFL,
+    //BCT_COL,
+    //BCT_REFL,
+    //BCT_UDA,
+    BCT_MAX,
+};
+
 ///< \}

@@ -83,6 +83,8 @@ class mcemEncoder {
 private:
 	TEncBacTop m_encBac;            ///< pointer to bac
 	TComBufferChunk m_bufferChunk;  ///< bitstream buffer chunk
+	HighLevelSyntax m_hls;       ///< high-level syntax parameters
+	ofstream m_bitstreamFile;       ///< file bitstream
 
 public:
 	void encode(encoderParams& params, 

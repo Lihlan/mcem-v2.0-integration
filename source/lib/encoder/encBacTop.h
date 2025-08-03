@@ -35,7 +35,7 @@
 
 #include "encBacCore.h"
 #include "contextModel.h"
-//#include "common/HighLevelSyntax.h"
+#include "HighLevelSyntax.h"
 //#include "common/TComBufferChunk.h"
 //#include "common/TComOccupancyMap.h"
 //#include "common/contributors.h"
@@ -58,6 +58,9 @@ private:
 
 public:
   ///< high level syntax
+  void codeSPS(const SequenceParameterSet& sps);
+
+
 
   ///< geometry residual related syntax
   void encodeRunlength(int32_t& length);

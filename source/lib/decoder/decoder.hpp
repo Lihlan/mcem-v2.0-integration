@@ -37,13 +37,16 @@ class mcemDecoder {
 private:
 	TDecBacTop m_decBac;            ///< pointer to bac
 	TComBufferChunk m_bufferChunk;  ///< bitstream buffer chunk
+	HighLevelSyntax m_hls;       ///< high-level syntax parameters
+	string m_bitstreamFileName;  ///< input bitstream file name
 
 public:
 	void decode(decoderParams& params,
 				decoderDracoParams&	   paramsDraco, 
 				decoderHPMParams&      paramsHPM,
 				std::vector<char>& bitstreamBase,
-				std::vector<char>& bitstreamGeom);
+				std::vector<char>& bitstreamGeom,
+				const std::string& inputPath);
 	void decodeMetadata(std::vector<char>&	bitstreamBase, 
 						decoderParams&		params);
 	void decodeBaseMesh(MeshBundle&         MB,
@@ -56,7 +59,6 @@ public:
 					 std::vector<char>&      bitstream);
 
 	void decodeGeometryResidual(MeshBundle&        MB, 
-								std::vector<char>& bitstreamGeom,
 								decoderParams&	   params);
 	bool decodeTexture(decoderHPMParams& paramsHPM);
 };

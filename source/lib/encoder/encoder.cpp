@@ -92,6 +92,23 @@ bool mcemEncoder::encodeTexture(Image3<uint8_t>& rgb_data, encoderParams& params
 	argv_hpm = load_hpm_options(paramsHPM, &argc_hpm);
 	encoder_hpm(argc_hpm, argv_hpm);
 
+	std::ifstream textureBitstream(paramsHPM.output, std::ios::binary);
+	std::vector<char> buffer((std::istreambuf_iterator<char>(textureBitstream)), std::istreambuf_iterator<char>());
+	textureBitstream.close();
+
+	uint32_t dataSize = static_cast<uint32_t>(buffer.size());
+	uint64_t totalSize = sizeof(dataSize) + static_cast<uint64_t>(dataSize);
+	m_bufferChunk.allocateBuffSize(totalSize);
+
+	char* buf = reinterpret_cast<char*>(m_bufferChunk.getBitStreamBuffer());
+	std::memcpy(buf, &dataSize, sizeof(dataSize));                      // 4B,length
+	std::memcpy(buf + sizeof(dataSize), buffer.data(), dataSize);      // payload
+
+	m_bufferChunk.setBufferType(BufferChunkType::BCT_TEXTURE);
+	m_bufferChunk.writeToBitstream(&m_bitstreamFile, totalSize);// £º00 00 01 + type + [4B length + payload]
+	m_bufferChunk.reset();
+
+	std::cout << "Bitstream size texture:" << dataSize << " bytes." << endl;// payload size
 	return true;
 }
 
@@ -195,11 +212,23 @@ void mcemEncoder::encodeBaseMesh(MeshBundle&        MB,
 		cerr << "Error: failed to open bitstream file " << params.output_mesh << " for writing!"
 			<< endl;
 	}
-	encodeMetadata(params, bitstreamFile);
 	// encode base mesh using draco
 	encodeDraco(base, reconMesh, bitstream, paramsDraco);
 	bitstreamFile.write(bitstream.data(), bitstream.size());
 	bitstreamFile.close();
+
+	uint32_t dataSize = static_cast<uint32_t>(bitstream.size());
+	uint64_t totalSize = sizeof(dataSize) + static_cast<uint64_t>(dataSize);
+	m_bufferChunk.allocateBuffSize(totalSize);
+	char* buf = reinterpret_cast<char*>(m_bufferChunk.getBitStreamBuffer());
+	std::memcpy(buf, &dataSize, sizeof(dataSize));
+	std::memcpy(buf + sizeof(dataSize),bitstream.data(), dataSize);
+	//00 00 01 + type + 4 byte length + payload
+	m_bufferChunk.setBufferType(BufferChunkType::BCT_MESH);
+	m_bufferChunk.writeToBitstream(&m_bitstreamFile, totalSize);
+	m_bufferChunk.reset();
+
+	std::cout << "Bitstream size basemesh:" << dataSize << " bytes." << endl;	//payload size
 
 	if (!flag_lossless_geometry) {
 		// mapping subdivided-reconMesh with subdivided-baseMesh
@@ -236,6 +265,7 @@ void mcemEncoder::encodeGeometryResidual(MeshBundle& MB, encoderParams& params){
 		cerr << "Error: failed to open bitstream file " << params.output_geometry << " for writing!"
 			<< endl;
 	}
+	m_bufferChunk.setBufferType(BufferChunkType::BCT_GEOM);
 	init_aec_context_tab();
 	m_encBac.setBitstreamBuffer(m_bufferChunk);
 	m_encBac.initBac();
@@ -248,15 +278,36 @@ void mcemEncoder::encodeGeometryResidual(MeshBundle& MB, encoderParams& params){
 	}
 	m_encBac.encodeTerminationFlag();
 	m_encBac.encodeFinish();
-	m_bufferChunk.writeToBitstream(&bitstreamFile, m_encBac.getBitStreamLength());
+	m_bufferChunk.writeToBitstream(&m_bitstreamFile, m_encBac.getBitStreamLength());
+	uint32_t dataSize = static_cast<uint32_t>(m_encBac.getBitStreamLength());
+	char* payloadPtr = reinterpret_cast<char*>(m_bufferChunk.getBitStreamBuffer());
+	bitstreamFile.write(payloadPtr, m_encBac.getBitStreamLength());
 	m_bufferChunk.reset();
 	m_encBac.reset();
 	bitstreamFile.close();
+	std::cout << "Bitstream size geometry:" << dataSize << " bytes." << endl;	//payload size
 }
 
 void mcemEncoder::encode(encoderParams&      params,
 						 encoderDracoParams& paramsDraco, 
 						 encoderHPMParams&	 paramsHPM) {
+	m_bitstreamFile.open(params.output_bin, fstream::binary | fstream::out);
+	if (!m_bitstreamFile) {
+		cerr << "Error: failed to open bitstream file " << params.output_bin << " for writing!"
+			<< endl;
+	}
+
+	m_hls.sps.subdivFitSubdivIterCount = params.subdivFitSubdivIterCount;
+
+	///< encoding sequence parameter set
+	m_bufferChunk.setBufferType(BufferChunkType::BCT_SPS);
+	m_encBac.setBitstreamBuffer(m_bufferChunk);
+	m_encBac.codeSPS(m_hls.sps);
+	m_encBac.encodeFinish();
+	m_bufferChunk.writeToBitstream(&m_bitstreamFile, m_encBac.getBitStreamLength());
+	m_bufferChunk.reset();
+	m_encBac.reset();
+
 	// read files
 	TriMesh<MeshType> inputMesh;
 	inputMesh.readOBJ(params.input_mesh);
@@ -322,11 +373,15 @@ void mcemEncoder::encode(encoderParams&      params,
 			transferColor.textureTransfer(inputMesh, inputTexture, reconMesh, reconTexture, params);
 		}
 	}
-	
+
 	clock_t userTimeTextureBegin = clock();
 	if (params.flag_texture) {
 		encodeTexture(reconTexture, params, paramsHPM);
 	}
+
+	m_bufferChunk.writeFinalCodeToBitstream(&m_bitstreamFile);
+	m_bitstreamFile.close();
+
 	userTimeTexture = (double)(clock() - userTimeTextureBegin) / CLOCKS_PER_SEC;
 	userTimeTotal = (double)(clock() - userTimeTotalBegin) / CLOCKS_PER_SEC;
 
@@ -337,4 +392,5 @@ void mcemEncoder::encode(encoderParams&      params,
 	std::cout << "Total encode time (user):" << userTimeTotal << " sec." << std::endl;
 	std::cout << "Total geometry encode time (user):" << userTimeGeometry << " sec." << std::endl;
 	std::cout << "Total texture encode time (user):" << userTimeTexture << " sec." << std::endl;
+	std::cout << "Bitstream saved to:" << params.output_bin << std::endl;
 }

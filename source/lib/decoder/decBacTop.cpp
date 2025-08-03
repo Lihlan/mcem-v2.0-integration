@@ -47,6 +47,11 @@
 // Public class functions
 //////////////////////////////////////////////////////////////////////////
 
+void TDecBacTop::parseSPS(SequenceParameterSet& sps) {
+	sps.subdivFitSubdivIterCount = m_bac->com_bsr_read(&m_bitStream, 16);
+	m_bac->com_bsr_read_byte_align(&m_bitStream);
+}
+
 int TDecBacTop::parseRunlength() {
   int val = 0;
   if (m_bac->biari_decode_symbol(p_aec, &p_aec->geometry_syn_ctx.ctx_length_eq0))
@@ -126,10 +131,15 @@ void TDecBacTop::reset() {
 }
 
 void TDecBacTop::setBitstreamBuffer(TComBufferChunk& buffer) {
-  m_bac->com_bsr_init(&m_bitStream, (uint8_t*)buffer.addr, buffer.ssize, NULL);
-  m_bac->init_geometry_contexts(p_aec);
-  m_bac->aec_start_decoding(p_aec, m_bitStream.beg, 0,
-	  buffer.ssize);
+  if (buffer.getBufferType() == BufferChunkType::BCT_SPS) {
+	  m_bac->com_bsr_init(&m_bitStream, (uint8_t*)buffer.addr, buffer.ssize, NULL);
+  }
+  else {
+	  m_bac->com_bsr_init(&m_bitStream, (uint8_t*)buffer.addr, buffer.ssize, NULL);
+	  m_bac->init_geometry_contexts(p_aec);
+	  m_bac->aec_start_decoding(p_aec, m_bitStream.beg, 0,
+		  buffer.ssize);
+  }
 }
 
 ///< \{

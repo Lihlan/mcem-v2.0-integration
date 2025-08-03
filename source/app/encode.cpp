@@ -273,11 +273,11 @@ int main(int argc, char** argv) {
 	mcemEncoder mcemEncoder;
 	mcemEncoder.encode(params, paramsDraco, paramsHPM);
 
-	if (!params.output_bin.empty()) {
-		encodeBitstreams(params.flag_texture, paramsDraco.output, params.output_geometry,
-						 paramsHPM.output, params.output_bin);
-		std::cout << "Bitstream saved to:" << params.output_bin << std::endl;
-	}
+	//if (!params.output_bin.empty()) {
+	//	encodeBitstreams(params.flag_texture, paramsDraco.output, params.output_geometry,
+	//					 paramsHPM.output, params.output_bin);
+	//	std::cout << "Bitstream saved to:" << params.output_bin << std::endl;
+	//}
 	std::cout << "Encode finished! " << std::endl;
 	return 0;
 }

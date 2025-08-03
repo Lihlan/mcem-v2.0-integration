@@ -32,60 +32,23 @@
 * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 * THE POSSIBILITY OF SUCH DAMAGE.
 */
-
-#include "decBacCore.h"
 #include "commonDef.h"
-#include "contextModel.h"
-#include "HighLevelSyntax.h"
-// #include "common/TComBufferChunk.h"
 
-#define CHECK_ALL_CTX 0
+struct SequenceParameterSet {
+	uint32_t	 subdivFitSubdivIterCount = 0;
 
-///< \in TLibDecoder \{
+	//UInt profileId = 0;
+	//UInt levelId = 0;
+	//UInt frameRateCode = 0;
+	//Bool geomRemoveDuplicateFlag = true;   ///< remove duplicate points (=1) or keep duplicate points (=0)
+	//Bool attrPresentFlag = true;           ///< 0: without any attributes, 1: with at least one kind of attribute
+	//UInt maxNumAttributesMinus1 = 1;       ///< maximum number of attribute categories
+	//Bool multiAttributesSetFlag = 1;       ///<  0: indicate multi attribute is off, 1 indicate multi attribute is on.
 
-/**
- * Class TDecBacTop
- * entropy decoder
- */
+	//Bool recolorMode = true;               ///< 0: regular recolor, 1: fast recolor
+};
 
-class TDecBacTop {
-private:
-  COM_BS m_bitStream;
-  TDecBacCore* m_bac;
-  aec_t aec;
-  aec_t* p_aec;
-  geom_ctx_set_t m_ctxBackup;  // use to store the context for later restoration
-  uint8_t memoryChannel[1024];
-  uint8_t temp[1024];
+struct HighLevelSyntax {
+	SequenceParameterSet sps;
 
-public:
-  ///< decoding syntax
-  void parseSPS(SequenceParameterSet& sps);
-
-  ///< attribute related syntax
-  int parseRunlength();
-  int parseExpGolomb(int k, context_t* p_ctxPrefix, context_t* p_ctxSufffix);
-  int64_t parseResidual(const int ctx_id, const unsigned int& golombNum);
-
-  TDecBacTop();
-  ~TDecBacTop();
-  void reset();
-  void initBac();
-  bool decodeTerminationFlag();
-  void setBitstreamBuffer(TComBufferChunk& buffer);
-
-  void saveContext() {
-    m_ctxBackup = p_aec->geometry_syn_ctx;
-    for (int i = 0; i < 1024; i++)
-      temp[i] = memoryChannel[i];
-  }
-
-  void restoreContext() {
-    p_aec->geometry_syn_ctx = m_ctxBackup;
-    for (int i = 0; i < 1024; i++)
-      memoryChannel[i] = temp[i];
-  }
-
-};  ///< END CLASS TDecBacTop
-
-///< \{
+};

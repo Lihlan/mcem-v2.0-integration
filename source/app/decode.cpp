@@ -98,9 +98,17 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+
 	std::vector<char> bitstreamBase;
 	std::vector<char> bitstreamGeom;
-	params.flag_texture = decodeBitstreams(inputBin, bitstreamBase, bitstreamGeom, params_hpm.input);
+	//params.flag_texture = decodeBitstreams(inputBin, bitstreamBase, bitstreamGeom, params_hpm.input);
+    if (params_hpm.input == nullptr) {
+        std::string input = removeExtension(inputBin);
+        size_t totalSize = input.length() + std::strlen("_map.bin") + 1;
+        params_hpm.input = new char[totalSize];
+        std::strcpy(params_hpm.input, input.c_str());
+        std::strcat(params_hpm.input, "_map.bin");
+    }
 
 	if (params.flag_texture) {
 		if (params_hpm.input == nullptr) {
@@ -124,7 +132,7 @@ int main(int argc, char** argv) {
 	}
 
 	mcemDecoder mcemDecoder;
-	mcemDecoder.decode(params, params_draco, params_hpm, bitstreamBase, bitstreamGeom);
+	mcemDecoder.decode(params, params_draco, params_hpm, bitstreamBase, bitstreamGeom,inputBin);
 	std::cout << "Decode finished! " << std::endl;
 }
    

@@ -38,12 +38,32 @@
 #include<vector>
 
 using namespace std;
+//#define MAX_BS_BUF 1 << 28        ///< 256 * 1024 * 1024 bytes
+#define MAX_HEADER_BS_BUF 1 << 16  ///< 256 * 256 bytes
 
 
 /**
  * Class TComBitstream
  * bitstream buffer (a pointer to the real buffer)
  */
+
+#define start_code_lower                  (0x00)
+#define start_code_upper                  (0x04)
+
+
+#define sequence_start_code               (0x00)
+#define sequence_end_code                 (0x01)
+//#define geometry_start_code               (0x02)
+//#define attribute_start_code              (0x03)
+//#define frame_start_code                  (0x04)
+//#define user_data_start_code              (0x05)
+//#define geometry_slice_header_start_code  (0x06)
+//#define color_slice_header_start_code     (0x07)
+//#define refl_slice_header_start_code      (0x08)
+#define mesh_payload_start_code           (0x02)
+#define geometry_payload_start_code       (0x03)
+#define texture_payload_start_code        (0x04)
+//#define refl_slice_payload_start_code     (0x0B)
 
 class TComBitstream {
 public:
@@ -78,15 +98,24 @@ private:
 };  ///< END CLASS TComBitstream
 
 class TComBufferChunk : public TComBitstream {
+private:
+    BufferChunkType m_bufferType;
+
 public:
 	TComBufferChunk() = default;
+    TComBufferChunk(BufferChunkType bufferType);
 	~TComBufferChunk() = default;
 
 	void writeToBitstream(ofstream* outBitstream, uint64_t length);
-	int readFromBitstream(ifstream& inBitstream, int buffersize);
-	bool readFromBitstream(std::vector<char>& inBuffer);
+    void writeStartCodeToBitstream(ofstream* outBitstream);
+    void writeFinalCodeToBitstream(ofstream* outBitstream);
+    BufferChunkType determineBufferType(const uint32_t& startCode);
+	int readFromBitstream(ifstream& inBitstream, int buffersize, bool& decodeSequence, uint8_t& nextStartCode);
+    void setBufferType(BufferChunkType bufferType);
+    BufferChunkType getBufferType();
 
 private:
+    int readBufferChunk(ifstream& inBitstream, size_t& bufferChunkSize, uint8_t& nextStartCode);
 	size_t initParsingConvertPayloadToRBSP(const size_t uiBytesRead, unsigned char* pBuffer, unsigned char* pBuffer2);
 };
 /**

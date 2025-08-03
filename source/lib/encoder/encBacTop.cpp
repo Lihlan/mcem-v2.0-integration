@@ -47,6 +47,11 @@
 // Public class functions
 //////////////////////////////////////////////////////////////////////////
 
+void TEncBacTop::codeSPS(const SequenceParameterSet& sps) {
+	m_bac->com_bsw_write(&m_bitStream, sps.subdivFitSubdivIterCount, 16);
+	m_bac->com_bsw_write_byte_align(&m_bitStream);
+}
+
 void TEncBacTop::encodeRunlength(int32_t& length) {
   const bool isZero = length == 0;
   m_bac->biari_encode_symbol_aec(p_aec, isZero, &p_aec->p_geometry_ctx_set->ctx_length_eq0);
@@ -117,10 +122,16 @@ TEncBacTop::~TEncBacTop() {
 }
 
 void TEncBacTop::setBitstreamBuffer(TComBufferChunk& buffer) {
-	buffer.allocateBuffSize(buffersize);
-	m_bac->com_bsw_init(&m_bitStream, (uint8_t*)buffer.addr, (uint8_t*)buffer.addr2, buffer.bsize, NULL);
-	m_bac->init_geometry_contexts(p_aec);
-	m_bac->aec_start(p_aec, m_bitStream.beg, m_bitStream.end, 1);
+	if(buffer.getBufferType()==BufferChunkType::BCT_SPS){
+		buffer.allocateBuffSize(MAX_HEADER_BS_BUF);
+		m_bac->com_bsw_init(&m_bitStream, (uint8_t*)buffer.addr, (uint8_t*)buffer.addr2, buffer.bsize, NULL);
+	}else{
+		buffer.allocateBuffSize(buffersize);
+		m_bac->com_bsw_init(&m_bitStream, (uint8_t*)buffer.addr, (uint8_t*)buffer.addr2, buffer.bsize, NULL);
+		m_bac->init_geometry_contexts(p_aec);
+		m_bac->aec_start(p_aec, m_bitStream.beg, m_bitStream.end, 1);
+	}
+
 }
 
 void TEncBacTop::initBac() {

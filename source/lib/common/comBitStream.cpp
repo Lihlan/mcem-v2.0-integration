@@ -80,27 +80,188 @@ void* TComBitstream::getBitStreamBuffer() {
   return addr;
 }
 
+void TComBufferChunk::writeFinalCodeToBitstream(ofstream* outBitstream) {
+	outBitstream->put(0);
+	outBitstream->put(0);
+	outBitstream->put(1);
+	outBitstream->put(sequence_end_code);
+}
+
+void TComBufferChunk::writeStartCodeToBitstream(ofstream* outBitstream) {
+	switch (getBufferType()) {
+		case BufferChunkType(BCT_SPS):
+			outBitstream->put(sequence_start_code);
+			break;
+		case BufferChunkType(BCT_MESH):
+			outBitstream->put(mesh_payload_start_code);
+			break;
+		case BufferChunkType(BCT_GEOM):
+			outBitstream->put(geometry_payload_start_code);
+			break;
+		case BufferChunkType(BCT_TEXTURE):
+			outBitstream->put(texture_payload_start_code);
+			break;
+		default:
+			break;
+	}
+}
+
 void TComBufferChunk::writeToBitstream(ofstream* outBitstream, uint64_t length) {
+	///< write start code
+	outBitstream->put(0);
+	outBitstream->put(0);
+	outBitstream->put(1);
+
+	///< write buffer start code
+	writeStartCodeToBitstream(outBitstream);
+
+	///< write buffer chunk data
 	outBitstream->write((char*)getBitStreamBuffer(), length);
 }
 
-int TComBufferChunk::readFromBitstream(ifstream& inBitstream, int buffersize) {
-	return 1;
+BufferChunkType TComBufferChunk::determineBufferType(const uint32_t& startCode) {
+	switch (startCode) {
+	case sequence_start_code:
+		return BufferChunkType(BCT_SPS);
+		break;
+	case mesh_payload_start_code:
+		return BufferChunkType(BCT_MESH);
+		break;
+	case geometry_payload_start_code:
+		return BufferChunkType(BCT_GEOM);
+		break;
+	case texture_payload_start_code:
+		return BufferChunkType(BCT_TEXTURE);
+		break;
+	case sequence_end_code:
+		return BufferChunkType(BCT_MAX);
+		break;
+	default:
+		return BufferChunkType(BCT_MIN);
+		break;
+	}
+	return BufferChunkType(BCT_MIN);
 }
 
-bool TComBufferChunk::readFromBitstream(std::vector<char>& inBuffer) {
-	size_t buffersize = (1 << 28);
-	allocateBuffSize(buffersize);
-	char* pucBuffer = (char*)getBitStreamBuffer();
-	if (pucBuffer != nullptr) {
-		std::memcpy(pucBuffer, inBuffer.data(), inBuffer.size());
-		buffersize = initParsingConvertPayloadToRBSP(inBuffer.size(), (unsigned char*)addr, (unsigned char*)addr2);;
+int TComBufferChunk::readFromBitstream(ifstream& inBitstream, int buffersize, bool& decodeSequence, uint8_t& nextStartCode) {
+	///< read start code 00 00 01
+	if (!checkCond(inBitstream.get() == 0x00, "Error: invalid start code!"))
+		return EXIT_FAILURE;
+	if (!checkCond(inBitstream.get() == 0x00, "Error: invalid start code!"))
+		return EXIT_FAILURE;
+	if (!checkCond(inBitstream.get() == 0x01, "Error: invalid start code!"))
+		return EXIT_FAILURE;
+
+	uint8_t startCode = inBitstream.get();
+
+	m_bufferType = determineBufferType(startCode);
+	nextStartCode = 0;
+	if (startCode == sequence_end_code) {
+		decodeSequence = true;
+		return EXIT_SUCCESS;
+	}
+
+	if (m_bufferType == BCT_MESH || m_bufferType == BCT_TEXTURE) {
+		// read 4 Bytes length
+		uint32_t payloadSize = 0;
+		inBitstream.read(reinterpret_cast<char*>(&payloadSize), sizeof(payloadSize));
+		allocateBuffSize(payloadSize);
+		inBitstream.read(reinterpret_cast<char*>(addr), payloadSize);
+
+		return EXIT_SUCCESS;
+	}
+
+	if (m_bufferType == BCT_SPS)
+		allocateBuffSize(MAX_HEADER_BS_BUF);
+	else
 		allocateBuffSize(buffersize);
-		return true;
+
+	size_t length = 0;
+	if (readBufferChunk(inBitstream, length, nextStartCode) ==
+		EXIT_FAILURE)  ///< read buffer chunk data
+		return EXIT_FAILURE;
+	// ——— 5) 去仿冒（EPB Removal）——把 0x03 等防仿冒字节去掉 
+	length = initParsingConvertPayloadToRBSP(length, (unsigned char*)addr, (unsigned char*)addr2);  ///< demulate
+	allocateBuffSize(length);
+	return EXIT_SUCCESS;
+}
+
+
+TComBufferChunk::TComBufferChunk(BufferChunkType bufferType) {
+	m_bufferType = bufferType;
+}
+
+void TComBufferChunk::setBufferType(BufferChunkType bufferType) {
+	m_bufferType = bufferType;
+}
+
+BufferChunkType TComBufferChunk::getBufferType() {
+	return m_bufferType;
+}
+
+int TComBufferChunk::readBufferChunk(ifstream& inBitstream, size_t& bufferChunkSize,
+	uint8_t& nextStartCode) {
+	unsigned char* pucBuffer = (unsigned char*)getBitStreamBuffer();
+	unsigned char ucByte = 0;
+	char bEndOfStream = 0;
+
+	int iNextStartCodeBytes = 0;
+	unsigned int iBytesRead = 0;
+	unsigned int uiZeros = 0;
+	unsigned char pucBuffer_Temp[16];
+	int iBytesRead_Temp = 0;
+
+	while (true) {
+		inBitstream.read((char*)&ucByte, 1);
+
+		if (inBitstream.eof()) {
+			iNextStartCodeBytes = 0;
+			bEndOfStream = 1;
+			break;
+		}
+		pucBuffer[iBytesRead++] = ucByte;
+		if (ucByte > 1)  ///< ucByte != 0 && UChar != 1
+			uiZeros = 0;
+		else if (ucByte == 0)  ///< 00
+			uiZeros++;
+		else if (uiZeros > 1)  ///< 00 00
+		{
+			iBytesRead_Temp = 0;
+			pucBuffer_Temp[iBytesRead_Temp] = ucByte;
+
+			iBytesRead_Temp++;
+			inBitstream.read((char*)&ucByte, 1);
+
+			pucBuffer_Temp[iBytesRead_Temp] = ucByte;
+			pucBuffer[iBytesRead++] = ucByte;
+			iBytesRead_Temp++;
+
+			if (pucBuffer_Temp[0] == 0x01 &&
+				(pucBuffer_Temp[1] >= start_code_lower &&
+					pucBuffer_Temp[1] <= start_code_upper))  ///< 00 00 01 CODE
+			{
+				iNextStartCodeBytes = 2 + 1 + 1;  ///< encounter the next start code
+				nextStartCode = pucBuffer_Temp[1];
+				uiZeros = 0;
+				break;
+			}
+			else {
+				uiZeros = 0;
+				iNextStartCodeBytes = 0;
+			}
+		}
+		else {
+			uiZeros = 0;
+		}
 	}
-	else {
-		return false;
-	}
+	bufferChunkSize = iBytesRead - iNextStartCodeBytes;
+
+	if (bEndOfStream)
+		return EXIT_SUCCESS;
+
+	inBitstream.seekg(-1 * iNextStartCodeBytes,
+		std::ios_base::cur);  ///< go back four bytes of start code
+	return EXIT_SUCCESS;
 }
 
 size_t TComBufferChunk::initParsingConvertPayloadToRBSP(const size_t uiBytesRead, unsigned char* pBuffer,
